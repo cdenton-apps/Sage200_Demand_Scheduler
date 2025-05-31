@@ -5,22 +5,22 @@ import pandas as pd
 import io
 from datetime import datetime
 from utils.forecasting import (
-    prepare_sales_weekly,
     prepare_sales_weekly_all,
-    batch_forecast_weekly,
+    split_hist_future,
+    batch_seasonal_naive_forecast,
 )
 
-st.set_page_config(page_title="Weekly Demand Forecast (Sage 200 CSV)", layout="wide")
-st.title("🗓️ Sage 200 Weekly Demand Forecast (CSV Only)")
+st.set_page_config(page_title="Weekly Demand Forecast (Seasonal)", layout="wide")
+st.title("🗓️ Sage 200 Weekly Demand Forecast (CSV Only, Seasonal-Naive)")
 
 st.markdown(
     """
-    Upload **Stock** and **Sales Orders** CSV exports from Sage 200 (including any future‐dated orders).  
+    Upload **Stock** and **Sales Orders** CSV exports from Sage 200 (including future-dated orders).  
     The app will:
-    1. Aggregate sales data by week (Sunday‐ending).  
-    2. Split weekly data into “Historic” (≤ today) and “Actual Future” (> today).  
-    3. Forecast the next N weeks of demand using Prophet (fit on Historic only).  
-    4. Compare forecast vs. actual future (if your CSV contained future orders).  
+    1. Aggregate all sales data by week (Sunday-ending).  
+    2. Split into “Historic” (≤ today) and “Actual Future” (> today).  
+    3. Forecast the next N weeks for each SKU by taking the average of the same ISO week in prior years.  
+    4. Compare forecast vs. actual future (from future-dated orders).  
     5. Show a combined Demand Report (CurrentStock vs. Forecast vs. Actual).  
     6. Provide interactive charts for “Historic vs. Forecast vs. Actual” per SKU.  
     7. Allow CSV export of the full Demand Report.
@@ -94,46 +94,48 @@ with st.expander("Preview Sales Orders Data"):
 # ===========================
 st.header("3. Weekly Demand Preparation")
 
-# 4A) Full weekly aggregation (including future‐dated orders)
+# 4A) Full weekly aggregation (including future-dated orders)
 weekly_all = prepare_sales_weekly_all(sales_df)
 
 if weekly_all.empty:
     st.error("❌ No weekly sales data could be computed. Check your Sales Orders CSV.")
     st.stop()
 
-# 4B) Historic‐only weekly (ds ≤ today)
-today_date = pd.Timestamp(datetime.today().date())
-weekly_hist = weekly_all[weekly_all["ds"] <= today_date].copy()
-
-# 4C) “Actual future” weekly (ds > today)
-weekly_future_actual = weekly_all[weekly_all["ds"] > today_date].copy()
+# 4B) Split into Historic vs. Future
+weekly_hist, weekly_future_actual = split_hist_future(weekly_all)
 
 st.write("**Historic Weekly Sales (last 10 rows):**")
 st.dataframe(weekly_hist.tail(10))
 
-st.write("**Actual Future Weekly Sales (if any future‐dated orders):**")
+st.write("**Actual Future Weekly Sales (if any future-dated orders):**")
 st.dataframe(weekly_future_actual.tail(10))
 
 # ===========================
-# STEP 5: Forecast on Historic Only
+# STEP 5: Seasonal-Naive Forecast
 # ===========================
-st.header("4. Weekly Forecast (Historic Only)")
+st.header("4. Seasonal-Naive Forecast (Historic Only)")
 
 if weekly_hist.empty:
-    st.error("❌ Not enough historic data (all sales are future‐dated or CSV empty).")
+    st.error("❌ Not enough historic data (all sales are future-dated or CSV empty).")
     st.stop()
 
 forecast_weeks = st.slider(
     "Forecast Horizon (weeks)", min_value=4, max_value=24, value=12
 )
 
-forecast_df = batch_forecast_weekly(weekly_hist, periods=forecast_weeks)
+forecast_df = batch_seasonal_naive_forecast(weekly_hist, forecast_weeks)
 
 if forecast_df.empty:
-    st.warning("⚠️ Not enough history to forecast any SKU (need ≥ 4 weeks of history each).")
+    st.warning("⚠️ Not enough history to forecast any SKU (need ≥ 1 year of data in each ISO week).")
 else:
-    st.write(f"**Forecast for next {forecast_weeks} weeks (first 10 rows):**")
-    st.dataframe(forecast_df.head(10))
+    # Rename columns for display: ds → "Week Ending", yhat → "Forecasted Sales"
+    display_fcst = forecast_df.head(10).copy()
+    display_fcst = display_fcst.rename(columns={
+        "ds": "Week Ending",
+        "yhat": "Forecasted Sales"
+    })
+    st.write(f"**Seasonal-Naive Forecast for next {forecast_weeks} weeks (first 10 rows):**")
+    st.dataframe(display_fcst)
 
 # ===========================
 # STEP 6: Build Demand Report
@@ -141,7 +143,7 @@ else:
 st.header("5. Demand Report: Current Stock vs. Forecast vs. Actual")
 
 if not forecast_df.empty:
-    # 6A) Pivot forecast so each row is ItemCode, each column is forecast‐week
+    # 6A) Pivot forecast so each row is ItemCode, each column is forecast-week string
     future_weeks = sorted(forecast_df["ds"].unique())
     pivot_fcst = (
         forecast_df[["ItemCode", "ds", "yhat"]]
@@ -179,15 +181,15 @@ if not forecast_df.empty:
     ).fillna(0)
 
     # 6D) Compute “TotalForecastNextXW” = sum of forecast columns
-    forecast_columns = [
+    forecast_cols = [
         c for c in report_df.columns
-        if (c not in {"ItemCode", "ItemDescription", "CurrentStock"}) and (not c.startswith("Actual_"))
+        if (c not in {"ItemCode", "ItemDescription", "CurrentStock"}) and not c.startswith("Actual_")
     ]
-    report_df[f"TotalForecastNext{forecast_weeks}W"] = report_df[forecast_columns].sum(axis=1)
+    report_df[f"TotalForecastNext{forecast_weeks}W"] = report_df[forecast_cols].sum(axis=1)
 
     # 6E) Compute “TotalActualNextXW” = sum of actual future columns
-    actual_columns = [c for c in report_df.columns if c.startswith("Actual_")]
-    report_df[f"TotalActualNext{forecast_weeks}W"] = report_df[actual_columns].sum(axis=1)
+    actual_cols = [c for c in report_df.columns if c.startswith("Actual_")]
+    report_df[f"TotalActualNext{forecast_weeks}W"] = report_df[actual_cols].sum(axis=1)
 
     # 6F) Reorder recommendation (based on forecast only)
     report_df["RecommendReorderQty"] = (
@@ -204,11 +206,11 @@ if not forecast_df.empty:
         f"TotalActualNext{forecast_weeks}W",
         "RecommendReorderQty"
     ]
-    cols_order += forecast_columns + actual_columns
+    cols_order += forecast_cols + actual_cols
     report_df = report_df[cols_order]
 
     # 6H) Display
-    st.write("**Demand Report (Stock vs. Forecast vs. Actual Future):**")
+    st.write("**Demand Report (Stock vs. Seasonal Forecast vs. Actual Future):**")
     st.dataframe(report_df, use_container_width=True)
 
     # 6I) CSV Download
@@ -217,7 +219,7 @@ if not forecast_df.empty:
     st.download_button(
         label="📥 Download Demand Report as CSV",
         data=csv_buffer.getvalue(),
-        file_name="weekly_demand_report_actual_vs_forecast.csv",
+        file_name="seasonal_demand_report_actual_vs_forecast.csv",
         mime="text/csv"
     )
 
@@ -254,7 +256,7 @@ if not forecast_df.empty:
         plot_df = plot_df.merge(actual_sku, on="ds", how="left")
         plot_df = plot_df.fillna(0).set_index("ds")
 
-        # 7E) Line chart (Historical vs. Forecast vs. Actual Future)
+        # 7E) Line chart (Historical vs. Seasonal Forecast vs. Actual Future)
         st.subheader(f"Weekly Demand Comparison for {chosen_sku}")
         st.line_chart(plot_df[["HistoricalSales", "Forecast", "ActualFuture"]], height=450)
 
@@ -268,8 +270,8 @@ if not forecast_df.empty:
             "Quantity": [current_stock, total_fcst, total_actual]
         }).set_index("Category")
 
-        st.subheader(f"Stock vs. Forecast vs. Actual Next {forecast_weeks} Weeks")
+        st.subheader(f"Stock vs. Seasonal Forecast vs. Actual Next {forecast_weeks} Weeks")
         st.bar_chart(bar_df, height=300)
 
 else:
-    st.warning("⚠️ No forecasts generated. Ensure you have ≥ 4 weeks of historic data per SKU.")
+    st.warning("⚠️ No seasonal forecasts generated. Ensure you have sufficient historic data per SKU.")
