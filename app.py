@@ -3,7 +3,7 @@
 import streamlit as st
 import pandas as pd
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 from utils.forecasting import (
     prepare_sales_weekly_all,
     split_hist_future,
@@ -104,11 +104,43 @@ if weekly_all.empty:
 # 4B) Split into Historic vs. Future
 weekly_hist, weekly_future_actual = split_hist_future(weekly_all)
 
-st.write("**Historic Weekly Sales (last 10 rows):**")
-st.dataframe(weekly_hist.tail(10))
+# 4C) Build a display DataFrame for Historic Weekly Sales
+if not weekly_hist.empty:
+    hist_display = weekly_hist.copy()
+    # Rename y → "Historical Sales"
+    hist_display = hist_display.rename(columns={"y": "Historical Sales"})
+    # Compute Week Ending (Sunday) and Week Beginning (Monday = ds - 6 days)
+    hist_display["Week Ending"] = hist_display["ds"]
+    hist_display["Week Beginning"] = hist_display["ds"] - pd.Timedelta(days=6)
+    # ISO week number
+    hist_display["Week Number"] = hist_display["ds"].dt.isocalendar().week
+    # Reorder columns
+    hist_display = hist_display[[
+        "ItemCode", "Week Number", "Week Beginning", "Week Ending", "Historical Sales"
+    ]]
+    st.write("**Historic Weekly Sales (last 10 rows):**")
+    st.dataframe(hist_display.tail(10))
+else:
+    st.write("⚠️ No historic weekly data available.")
 
-st.write("**Actual Future Weekly Sales (if any future-dated orders):**")
-st.dataframe(weekly_future_actual.tail(10))
+# 4D) Build a display DataFrame for Actual Future Weekly Sales (if any)
+if not weekly_future_actual.empty:
+    fut_display = weekly_future_actual.copy()
+    # Rename y → "Actual Future Sales"
+    fut_display = fut_display.rename(columns={"y": "Actual Future Sales"})
+    # Compute Week Ending and Week Beginning
+    fut_display["Week Ending"] = fut_display["ds"]
+    fut_display["Week Beginning"] = fut_display["ds"] - pd.Timedelta(days=6)
+    # ISO week number
+    fut_display["Week Number"] = fut_display["ds"].dt.isocalendar().week
+    # Reorder columns
+    fut_display = fut_display[[
+        "ItemCode", "Week Number", "Week Beginning", "Week Ending", "Actual Future Sales"
+    ]]
+    st.write("**Actual Future Weekly Sales (if any future-dated orders):**")
+    st.dataframe(fut_display.tail(10))
+else:
+    st.write("⚠️ No future-dated orders found (so no Actual Future weekly data).")
 
 # ===========================
 # STEP 5: Seasonal-Naive Forecast
@@ -130,14 +162,16 @@ if forecast_df.empty:
 else:
     # Prepare a display copy with better column names:
     display_fcst = forecast_df.copy()
-    # Compute Week Beginning = week-ending (ds) minus 6 days (Monday)
+    # Calculate Week Beginning = Sunday (ds) minus 6 days (Monday)
     display_fcst["Week Beginning"] = display_fcst["ds"] - pd.Timedelta(days=6)
-    # Compute ISO week number from the week-ending date (ds)
+    # ISO week number
     display_fcst["Week Number"] = display_fcst["ds"].dt.isocalendar().week
-    # Rename forecast column
+    # Rename yhat → "Forecasted Sales"
     display_fcst = display_fcst.rename(columns={"yhat": "Forecasted Sales"})
-    # Reorder columns for display
-    display_fcst = display_fcst[["ItemCode", "Week Number", "Week Beginning", "Forecasted Sales"]]
+    # Reorder columns
+    display_fcst = display_fcst[[
+        "ItemCode", "Week Number", "Week Beginning", "Forecasted Sales"
+    ]]
 
     st.write(f"**Seasonal-Naive Forecast for next {forecast_weeks} weeks (first 10 rows):**")
     st.dataframe(display_fcst.head(10))
@@ -155,7 +189,7 @@ if not forecast_df.empty:
         .pivot(index="ItemCode", columns="ds", values="yhat")
         .fillna(0)
     )
-    # Convert column names (ds) to ISO date strings
+    # Convert columns (ds) to ISO date strings
     pivot_fcst.columns = [col.date().isoformat() for col in pivot_fcst.columns]
     pivot_fcst.reset_index(inplace=True)
 
