@@ -3,7 +3,7 @@
 import streamlit as st
 import pandas as pd
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from utils.forecasting import (
     prepare_sales_weekly_all,
     split_hist_future,
@@ -114,6 +114,9 @@ if not weekly_hist.empty:
     hist_display["Week Beginning"] = hist_display["ds"] - pd.Timedelta(days=6)
     # ISO week number
     hist_display["Week Number"] = hist_display["ds"].dt.isocalendar().week
+    # Format dates to DD-MM-YYYY
+    hist_display["Week Beginning"] = hist_display["Week Beginning"].dt.strftime("%d-%m-%Y")
+    hist_display["Week Ending"] = hist_display["Week Ending"].dt.strftime("%d-%m-%Y")
     # Reorder columns
     hist_display = hist_display[[
         "ItemCode", "Week Number", "Week Beginning", "Week Ending", "Historical Sales"
@@ -133,6 +136,9 @@ if not weekly_future_actual.empty:
     fut_display["Week Beginning"] = fut_display["ds"] - pd.Timedelta(days=6)
     # ISO week number
     fut_display["Week Number"] = fut_display["ds"].dt.isocalendar().week
+    # Format dates to DD-MM-YYYY
+    fut_display["Week Beginning"] = fut_display["Week Beginning"].dt.strftime("%d-%m-%Y")
+    fut_display["Week Ending"] = fut_display["Week Ending"].dt.strftime("%d-%m-%Y")
     # Reorder columns
     fut_display = fut_display[[
         "ItemCode", "Week Number", "Week Beginning", "Week Ending", "Actual Future Sales"
@@ -160,7 +166,7 @@ forecast_df = batch_seasonal_naive_forecast(weekly_hist, forecast_weeks)
 if forecast_df.empty:
     st.warning("⚠️ Not enough history to forecast any SKU (need ≥ 1 year of data in each ISO week).")
 else:
-    # Prepare a display copy with better column names:
+    # Prepare a display copy with better column names and British date format:
     display_fcst = forecast_df.copy()
     # Calculate Week Beginning = Sunday (ds) minus 6 days (Monday)
     display_fcst["Week Beginning"] = display_fcst["ds"] - pd.Timedelta(days=6)
@@ -168,6 +174,8 @@ else:
     display_fcst["Week Number"] = display_fcst["ds"].dt.isocalendar().week
     # Rename yhat → "Forecasted Sales"
     display_fcst = display_fcst.rename(columns={"yhat": "Forecasted Sales"})
+    # Format Week Beginning to DD-MM-YYYY
+    display_fcst["Week Beginning"] = display_fcst["Week Beginning"].dt.strftime("%d-%m-%Y")
     # Reorder columns
     display_fcst = display_fcst[[
         "ItemCode", "Week Number", "Week Beginning", "Forecasted Sales"
@@ -189,8 +197,8 @@ if not forecast_df.empty:
         .pivot(index="ItemCode", columns="ds", values="yhat")
         .fillna(0)
     )
-    # Convert columns (ds) to ISO date strings
-    pivot_fcst.columns = [col.date().isoformat() for col in pivot_fcst.columns]
+    # Convert columns (ds) to British date strings (DD-MM-YYYY)
+    pivot_fcst.columns = [col.strftime("%d-%m-%Y") for col in pivot_fcst.columns]
     pivot_fcst.reset_index(inplace=True)
 
     # 6B) Pivot actual future demand so each row is ItemCode, each column is week
@@ -200,7 +208,7 @@ if not forecast_df.empty:
             .pivot(index="ItemCode", columns="ds", values="y")
             .fillna(0)
         )
-        pivot_actual.columns = [f"Actual_{col.date().isoformat()}" for col in pivot_actual.columns]
+        pivot_actual.columns = [f"Actual_{col.strftime('%d-%m-%Y')}" for col in pivot_actual.columns]
         pivot_actual.reset_index(inplace=True)
     else:
         pivot_actual = pd.DataFrame({"ItemCode": pivot_fcst["ItemCode"].tolist()})
