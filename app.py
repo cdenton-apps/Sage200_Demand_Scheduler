@@ -3,7 +3,7 @@
 import streamlit as st
 import pandas as pd
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from utils.forecasting import (
     prepare_sales_weekly_all,
     split_hist_future,
@@ -128,14 +128,19 @@ forecast_df = batch_seasonal_naive_forecast(weekly_hist, forecast_weeks)
 if forecast_df.empty:
     st.warning("⚠️ Not enough history to forecast any SKU (need ≥ 1 year of data in each ISO week).")
 else:
-    # Rename columns for display: ds → "Week Ending", yhat → "Forecasted Sales"
-    display_fcst = forecast_df.head(10).copy()
-    display_fcst = display_fcst.rename(columns={
-        "ds": "Week Ending",
-        "yhat": "Forecasted Sales"
-    })
+    # Prepare a display copy with better column names:
+    display_fcst = forecast_df.copy()
+    # Compute Week Beginning = week-ending (ds) minus 6 days (Monday)
+    display_fcst["Week Beginning"] = display_fcst["ds"] - pd.Timedelta(days=6)
+    # Compute ISO week number from the week-ending date (ds)
+    display_fcst["Week Number"] = display_fcst["ds"].dt.isocalendar().week
+    # Rename forecast column
+    display_fcst = display_fcst.rename(columns={"yhat": "Forecasted Sales"})
+    # Reorder columns for display
+    display_fcst = display_fcst[["ItemCode", "Week Number", "Week Beginning", "Forecasted Sales"]]
+
     st.write(f"**Seasonal-Naive Forecast for next {forecast_weeks} weeks (first 10 rows):**")
-    st.dataframe(display_fcst)
+    st.dataframe(display_fcst.head(10))
 
 # ===========================
 # STEP 6: Build Demand Report
@@ -150,6 +155,7 @@ if not forecast_df.empty:
         .pivot(index="ItemCode", columns="ds", values="yhat")
         .fillna(0)
     )
+    # Convert column names (ds) to ISO date strings
     pivot_fcst.columns = [col.date().isoformat() for col in pivot_fcst.columns]
     pivot_fcst.reset_index(inplace=True)
 
