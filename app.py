@@ -1,10 +1,7 @@
-# ======================================
-# File: app.py
-# ======================================
+# app.py
 
 import streamlit as st
 import pandas as pd
-import numpy as np
 import io
 from datetime import datetime
 from utils.forecasting import (
@@ -123,7 +120,7 @@ st.dataframe(weekly_future_actual.tail(10))
 st.header("4. Weekly Forecast (Historic Only)")
 
 if weekly_hist.empty:
-    st.error("❌ Not enough historic data (all sales are ‘future‐dated’ or CSV empty).")
+    st.error("❌ Not enough historic data (all sales are future‐dated or CSV empty).")
     st.stop()
 
 forecast_weeks = st.slider(
@@ -164,7 +161,6 @@ if not forecast_df.empty:
         pivot_actual.columns = [f"Actual_{col.date().isoformat()}" for col in pivot_actual.columns]
         pivot_actual.reset_index(inplace=True)
     else:
-        # No future‐dated orders provided, create an empty frame with just ItemCode
         pivot_actual = pd.DataFrame({"ItemCode": pivot_fcst["ItemCode"].tolist()})
 
     # 6C) Merge stock + forecast + actual
@@ -183,14 +179,17 @@ if not forecast_df.empty:
     ).fillna(0)
 
     # 6D) Compute “TotalForecastNextXW” = sum of forecast columns
-    forecast_columns = [c for c in report_df.columns if (c not in {"ItemCode", "ItemDescription", "CurrentStock"}) and (not c.startswith("Actual_"))]
+    forecast_columns = [
+        c for c in report_df.columns
+        if (c not in {"ItemCode", "ItemDescription", "CurrentStock"}) and (not c.startswith("Actual_"))
+    ]
     report_df[f"TotalForecastNext{forecast_weeks}W"] = report_df[forecast_columns].sum(axis=1)
 
-    # 6E) Compute “TotalActualNextXW” = sum of actual future columns (for the same forecast weeks if provided)
+    # 6E) Compute “TotalActualNextXW” = sum of actual future columns
     actual_columns = [c for c in report_df.columns if c.startswith("Actual_")]
     report_df[f"TotalActualNext{forecast_weeks}W"] = report_df[actual_columns].sum(axis=1)
 
-    # 6F) Reorder recommendation (based on forecast only):
+    # 6F) Reorder recommendation (based on forecast only)
     report_df["RecommendReorderQty"] = (
         report_df[f"TotalForecastNext{forecast_weeks}W"] - report_df["CurrentStock"]
     ).apply(lambda x: int(x) if x > 0 else 0)
@@ -199,7 +198,12 @@ if not forecast_df.empty:
     cols_order = ["ItemCode"]
     if "ItemDescription" in report_df.columns:
         cols_order.append("ItemDescription")
-    cols_order += ["CurrentStock", f"TotalForecastNext{forecast_weeks}W", f"TotalActualNext{forecast_weeks}W", "RecommendReorderQty"]
+    cols_order += [
+        "CurrentStock",
+        f"TotalForecastNext{forecast_weeks}W",
+        f"TotalActualNext{forecast_weeks}W",
+        "RecommendReorderQty"
+    ]
     cols_order += forecast_columns + actual_columns
     report_df = report_df[cols_order]
 
@@ -254,7 +258,7 @@ if not forecast_df.empty:
         st.subheader(f"Weekly Demand Comparison for {chosen_sku}")
         st.line_chart(plot_df[["HistoricalSales", "Forecast", "ActualFuture"]], height=450)
 
-        # 7F) Bar chart: “Forecast vs. Actual Future” summed over next N weeks
+        # 7F) Bar chart: “Forecast vs. Actual Future” summed over next X weeks
         total_fcst = float(fcst_sku["Forecast"].sum()) if not fcst_sku.empty else 0.0
         total_actual = float(actual_sku["ActualFuture"].sum()) if not actual_sku.empty else 0.0
         current_stock = float(report_df.loc[report_df["ItemCode"] == chosen_sku, "CurrentStock"].iloc[0])
