@@ -9,13 +9,44 @@ import math
 from datetime import datetime, timedelta
 from utils.forecasting import batch_seasonal_naive_forecast
 
+# ─────────────────────────────────────────
+# (A) Apply a little custom CSS to hide 
+#     Streamlit's default menu + footer
+# ─────────────────────────────────────────
+hide_streamlit_style = """
+    <style>
+    /* Hide default Streamlit header/menu --> */
+    #MainMenu {visibility: hidden;}
+    /* Hide “Made with Streamlit” footer --> */
+    footer {visibility: hidden;}
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────
+# (B) Display the Solidus logo at the top
+# ─────────────────────────────────────────
+# Make sure you saved the logo file in: assets/solidus_logo.png
+st.image("assets/solidus_logo.png", width=250)  # adjust width to taste
+
+# ─────────────────────────────────────────
+# (C) Streamlit page config picks up the theme 
+#     from .streamlit/config.toml (see previous step)
+# ─────────────────────────────────────────
 st.set_page_config(
     page_title="Solidus Demand Forecast",
     layout="wide"
 )
 
+# ─────────────────────────────────────────
+# (D) Main title (in brand color, automatically set by theme)
+# ─────────────────────────────────────────
 st.title("Solidus Demand Forecast")
 
+
+# ─────────────────────────────────────────
+# (E) Instructions / markdown text 
+# ─────────────────────────────────────────
 st.markdown(
     """
     Upload **four** CSV exports from Sage 200:
@@ -392,13 +423,13 @@ backlog_df = backlog_df[["ItemCode", "OverdueOrders"]]
 
 report_df = pd.merge(report_df, backlog_df, on="ItemCode", how="left").fillna({"OverdueOrders": 0})
 
-# 6G) NetDemand = (CurrentStock + TotalPlannedNextNW) − TotalActualNextNW      # <<< changed
+# 6G) NetDemand = (CurrentStock + TotalPlannedNextNW) − TotalActualNextNW       # <<< changed
 report_df[f"NetDemandNext{forecast_weeks}W"] = (
     report_df["CurrentStock"] + report_df[f"TotalPlannedNext{forecast_weeks}W"]
     - report_df[f"TotalActualNext{forecast_weeks}W"]
 )
 
-# 6H) RecommendReorderQty = round up NetDemand to nearest 10                   # <<< changed
+# 6H) RecommendReorderQty = round up NetDemand to nearest 10                    # <<< changed
 def round_up_to_10(x):
     return math.ceil(x / 10) * 10 if x > 0 else 0
 
