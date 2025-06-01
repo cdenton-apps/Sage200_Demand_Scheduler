@@ -11,7 +11,7 @@ from PIL import Image
 from utils.forecasting import batch_seasonal_naive_forecast
 
 # ─────────────────────────────────────────
-# (1) SET STREAMLIT PAGE CONFIGURATION FIRST
+# (1) STREAMLIT PAGE CONFIG (must come first)
 # ─────────────────────────────────────────
 st.set_page_config(
     page_title="Solidus Demand Forecast",
@@ -19,47 +19,47 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────
-# (2) HIDE STREAMLIT’S DEFAULT MENU & FOOTER (optional)
+# (2) HIDE STREAMLIT MENU & FOOTER (optional)
 # ─────────────────────────────────────────
 hide_streamlit_style = """
     <style>
-    /* Hide top menu */
-    #MainMenu {visibility: hidden;}
-    /* Hide “Made with Streamlit” footer */
-    footer {visibility: hidden;}
+      /* Hide top-right menu */
+      #MainMenu { visibility: hidden; }
+      /* Hide “Made with Streamlit” footer */
+      footer { visibility: hidden; }
     </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
-# (3) DISPLAY LOGO AND TITLE SIDE‐BY‐SIDE
+# (3) SHOW LOGO + TITLE SIDE-BY-SIDE
 # ─────────────────────────────────────────
-
-# Give the columns a [1:3] ratio; the left column is for the logo, the right for text.
+# Create two columns with ratio 1:3
 col_logo, col_text = st.columns([1, 3], gap="medium")
 
 with col_logo:
-    # Attempt to load the logo. If it fails, just show a warning.
     logo_path = "assets/solidus_logo.png"
     try:
         logo_img = Image.open(logo_path)
-        # Force the logo to a fixed width of 150px so it stays small.
+        # Force a fixed width so it doesn’t expand too tall.
         st.image(logo_img, width=150)
     except Exception:
-        st.warning(f"⚠️ Could not load logo at '{logo_path}'.\n"
-                   "Please confirm the file exists and is a valid PNG.")
+        st.warning(
+            f"⚠️ Could not load logo at '{logo_path}'.\n"
+            "Please confirm the file exists and is a valid PNG."
+        )
 
 with col_text:
-    # Title in brand color (Streamlit theme “primaryColor” will style this)
+    # Title in brand color (#0D4B6A is an example; Streamlit theme primaryColor also applies)
     st.markdown(
         "<h1 style='color:#0D4B6A; margin-bottom:0.25em;'>"
         "Solidus Demand Forecast</h1>",
         unsafe_allow_html=True
     )
-    # Descriptive instructions right next to the logo
+    # Instructions / description next to the logo
     st.markdown(
         """
-        Upload **four** CSV exports from Sage 200:
+        **Upload four CSV exports from Sage 200:**
         1. **Current Stock** (ItemCode, ItemDescription*, QuantityOnHand)  
         2. **Past Order Despatches** (DispatchDate, ItemCode, QuantityDispatched)  
         3. **Sales Orders** (OrderDate, ItemCode, QuantityOrdered)  
@@ -71,9 +71,9 @@ with col_text:
            - Historic (≤ today) — used to calculate overdue/backlog  
            - **Actual Future** (> today) — used to compare against forecast  
         3. Aggregate **works orders** by week, taking only future weeks (> today) as “Planned Manufacturing.”  
-        4. Use a **seasonal-naive** approach (average of the same ISO week in prior years on  
-           despatches) to forecast N weeks, using **week-commencing** (Monday) dates.  
-        5. Compute **Overdue Orders** = max(HistoricSales − HistoricDespatched, 0).  
+        4. Use a **seasonal-naive** approach (average of the same ISO week in prior years on despatches)  
+           to forecast N weeks, using **week-commencing** (Monday) dates.  
+        5. Compute **Overdue Orders** = max(HistoricSales – HistoricDespatched, 0).  
         6. Build a **Demand Report** with columns:  
            - ItemCode (SKU)  
            - ItemDescription (SKU description)  
@@ -82,19 +82,20 @@ with col_text:
            - TotalForecastNextNW  
            - TotalActualNextNW  
            - TotalPlannedNextNW  
-           - NetDemand = (CurrentStock + TotalPlannedNextNW) − TotalActualNextNW  
-           - RecommendReorderQty = round up(NetDemand) to next multiple of 10 (if NetDemand > 0)  
-           - Followed by interleaved weekly columns: Forecast / Actual / Planned for each week commencing.  
-        7. Provide interactive charts showing weekly series (Historic Despatched, Forecast, Actual, Planned)   
-           and a bar chart of CurrentStock vs. Forecast vs. Actual vs. Planned vs. Overdue vs. Net.  
+           - **NetDemand** = (CurrentStock + TotalPlannedNextNW) − TotalActualNextNW  
+           - **RecommendReorderQty** = round up(NetDemand) to next multiple of 10 (if NetDemand > 0)  
+           - Followed by interleaved weekly columns: Forecast / Actual / Planned  
+             for each week commencing.  
+        7. Provide interactive charts of weekly series (Historic Despatched, Forecast, Actual, Planned) 
+           and a bar chart showing CurrentStock vs Forecast vs Actual vs Planned vs Overdue vs Net.  
         8. Allow CSV export of the full Demand Report.
         """,
         unsafe_allow_html=True
     )
 
-# ===========================
-# STEP 1: UPLOAD CSVs
-# ===========================
+# ─────────────────────────────────────────
+# (4) STEP 1: UPLOAD CSVs
+# ─────────────────────────────────────────
 st.header("1. Upload Sage 200 CSVs")
 
 col1, col2 = st.columns(2, gap="large")
@@ -125,9 +126,9 @@ if not (stock_file and despatch_file and sales_file and works_file):
     st.info("Please upload all four CSVs to proceed.")
     st.stop()
 
-# ===========================
-# STEP 2: READ & VALIDATE
-# ===========================
+# ─────────────────────────────────────────
+# (5) STEP 2: READ & VALIDATE
+# ─────────────────────────────────────────
 try:
     stock_df = pd.read_csv(stock_file)
     despatch_df = pd.read_csv(despatch_file)
@@ -137,6 +138,7 @@ except Exception as e:
     st.error(f"❌ Could not read one or more CSV files: {e}")
     st.stop()
 
+# Required‐columns check
 req_stock    = {"ItemCode", "QuantityOnHand"}
 req_despatch = {"DispatchDate", "ItemCode", "QuantityDispatched"}
 req_sales    = {"OrderDate", "ItemCode", "QuantityOrdered"}
@@ -162,9 +164,9 @@ if missing_works:
 
 st.success("✅ All CSVs loaded and validated.")
 
-# ===========================
-# STEP 3: PREVIEW RAW DATA
-# ===========================
+# ─────────────────────────────────────────
+# (6) STEP 3: PREVIEW RAW DATA
+# ─────────────────────────────────────────
 st.header("2. Preview Raw Data")
 
 with st.expander("Preview Stock Data (first 10 rows)"):
@@ -180,17 +182,21 @@ with st.expander("Preview Open Works Orders Data (first 10 rows)"):
     st.dataframe(works_df.head(10))
 
 
-# ===========================
-# STEP 4: PREPARE WEEKLY DATA
-# ===========================
+# ─────────────────────────────────────────
+# (7) STEP 4: PREPARE WEEKLY DATA
+# ─────────────────────────────────────────
 st.header("3. Weekly Demand Preparation")
 
-# 4A) Despatches → historic weekly (week-ending Sunday)
-despatch_df["DispatchDate"] = pd.to_datetime(despatch_df["DispatchDate"], errors="coerce")
+# 4A) Past despatches → weekly (week-ending Sunday)
+despatch_df["DispatchDate"] = pd.to_datetime(
+    despatch_df["DispatchDate"], errors="coerce"
+)
 despatch_df["QuantityDispatched"] = pd.to_numeric(
     despatch_df["QuantityDispatched"], errors="coerce", downcast="integer"
 )
-despatch_df = despatch_df.dropna(subset=["DispatchDate", "ItemCode", "QuantityDispatched"])
+despatch_df = despatch_df.dropna(
+    subset=["DispatchDate", "ItemCode", "QuantityDispatched"]
+)
 
 weekly_despatch = (
     despatch_df
@@ -201,14 +207,17 @@ weekly_despatch = (
     .agg({"QuantityDispatched": "sum"})
     .rename(columns={"DispatchDate": "ds", "QuantityDispatched": "y"})
 )
+# Add “week_begin” (Monday) for each Sunday‐ending week
 weekly_despatch["week_begin"] = weekly_despatch["ds"] - pd.Timedelta(days=6)
 
-# 4B) Sales Orders → all-weeks (week-ending Sunday)
+# 4B) Sales Orders → weekly (week-ending Sunday)
 sales_df["OrderDate"] = pd.to_datetime(sales_df["OrderDate"], errors="coerce")
 sales_df["QuantityOrdered"] = pd.to_numeric(
     sales_df["QuantityOrdered"], errors="coerce", downcast="integer"
 )
-sales_df = sales_df.dropna(subset=["OrderDate", "ItemCode", "QuantityOrdered"])
+sales_df = sales_df.dropna(
+    subset=["OrderDate", "ItemCode", "QuantityOrdered"]
+)
 
 weekly_sales_all = (
     sales_df
@@ -221,12 +230,14 @@ weekly_sales_all = (
 )
 weekly_sales_all["week_begin"] = weekly_sales_all["ds"] - pd.Timedelta(days=6)
 
-# 4C) Works Orders → all-weeks (week-ending Sunday)
+# 4C) Works Orders → weekly (week-ending Sunday)
 works_df["EndDate"] = pd.to_datetime(works_df["EndDate"], errors="coerce")
 works_df["QuantityPlanned"] = pd.to_numeric(
     works_df["QuantityPlanned"], errors="coerce", downcast="integer"
 )
-works_df = works_df.dropna(subset=["EndDate", "ItemCode", "QuantityPlanned"])
+works_df = works_df.dropna(
+    subset=["EndDate", "ItemCode", "QuantityPlanned"]
+)
 
 weekly_works_all = (
     works_df
@@ -239,55 +250,58 @@ weekly_works_all = (
 )
 weekly_works_all["week_begin"] = weekly_works_all["ds"] - pd.Timedelta(days=6)
 
-# 4D) Split by today
+# 4D) Split by “today”
 today = pd.Timestamp(datetime.today().date())
 
-weekly_hist = weekly_despatch[weekly_despatch["week_begin"] <= today].copy()
-weekly_sales_hist   = weekly_sales_all[weekly_sales_all["week_begin"] <= today].copy()
-weekly_sales_future = weekly_sales_all[weekly_sales_all["week_begin"] > today].copy()
-weekly_works_future = weekly_works_all[weekly_works_all["week_begin"] > today].copy()
+weekly_hist = weekly_despatch[
+    weekly_despatch["week_begin"] <= today
+].copy()
+weekly_sales_hist = weekly_sales_all[
+    weekly_sales_all["week_begin"] <= today
+].copy()
+weekly_sales_future = weekly_sales_all[
+    weekly_sales_all["week_begin"] > today
+].copy()
+weekly_works_future = weekly_works_all[
+    weekly_works_all["week_begin"] > today
+].copy()
 
-# 4E) Display friendly tables
+# 4E) Helper to show “Week Number / Week Commencing / Week Ending / Value”
 def format_weekly_df(df, value_col, rename_col):
-    """
-    df: columns ["ItemCode","week_begin","y"]
-    value_col: original column name ("y")
-    rename_col: friendly name for value (e.g. "Historical Despatched")
-    Returns: DataFrame with columns:
-      ["ItemCode","Week Number","Week Commencing","Week Ending", rename_col]
-    """
     temp = df.copy()
     temp = temp.rename(columns={value_col: rename_col})
-    temp["Week Ending"]     = temp["week_begin"] + pd.Timedelta(days=6)
-    temp["Week Number"]     = temp["week_begin"].dt.isocalendar().week
+    temp["Week Ending"] = temp["week_begin"] + pd.Timedelta(days=6)
+    temp["Week Number"] = temp["week_begin"].dt.isocalendar().week
     temp["Week Commencing"] = temp["week_begin"].dt.strftime("%d-%m-%Y")
-    temp["Week Ending"]     = temp["Week Ending"].dt.strftime("%d-%m-%Y")
-    return temp[["ItemCode", "Week Number", "Week Commencing", "Week Ending", rename_col]]
+    temp["Week Ending"] = temp["Week Ending"].dt.strftime("%d-%m-%Y")
+    return temp[
+        ["ItemCode", "Week Number", "Week Commencing", "Week Ending", rename_col]
+    ]
 
 st.subheader("Historic Weekly Despatches (for Forecast)")
 if not weekly_hist.empty:
-    hist_despatch_display = format_weekly_df(weekly_hist, "y", "Historical Despatched")
-    st.dataframe(hist_despatch_display.tail(10))
+    hist_disp = format_weekly_df(weekly_hist, "y", "Historical Despatched")
+    st.dataframe(hist_disp.tail(10))
 else:
     st.write("⚠️ No historic despatch data available for forecasting.")
 
 st.subheader("Actual Future Weekly Sales (from Sales Orders)")
 if not weekly_sales_future.empty:
-    sales_future_display = format_weekly_df(weekly_sales_future, "y", "Actual Future Sales")
-    st.dataframe(sales_future_display.tail(10))
+    sales_disp = format_weekly_df(weekly_sales_future, "y", "Actual Future Sales")
+    st.dataframe(sales_disp.tail(10))
 else:
     st.write("⚠️ No future-dated sales orders detected.")
 
 st.subheader("Planned Future Weekly Manufacturing (from Works Orders)")
 if not weekly_works_future.empty:
-    works_future_display = format_weekly_df(weekly_works_future, "y", "Planned Manufacturing")
-    st.dataframe(works_future_display.tail(10))
+    works_disp = format_weekly_df(weekly_works_future, "y", "Planned Manufacturing")
+    st.dataframe(works_disp.tail(10))
 else:
     st.write("⚠️ No future-dated works orders detected (so no planned manufacturing).")
 
-# ===========================
-# STEP 5: SEASONAL-NAIVE FORECAST
-# ===========================
+# ─────────────────────────────────────────
+# (8) STEP 5: SEASONAL-NAIVE FORECAST
+# ─────────────────────────────────────────
 st.header("4. Seasonal-Naive Forecast (Historic Despatches Only)")
 
 if weekly_hist.empty:
@@ -303,16 +317,16 @@ forecast_df["week_begin"] = forecast_df["ds"] - pd.Timedelta(days=6)
 
 disp_fcst = forecast_df.copy()
 disp_fcst["Week Commencing"] = disp_fcst["week_begin"].dt.strftime("%d-%m-%Y")
-disp_fcst["Week Number"]     = disp_fcst["week_begin"].dt.isocalendar().week
+disp_fcst["Week Number"] = disp_fcst["week_begin"].dt.isocalendar().week
 disp_fcst = disp_fcst.rename(columns={"yhat": "Forecasted Demand"})
 disp_fcst = disp_fcst[["ItemCode", "Week Number", "Week Commencing", "Forecasted Demand"]]
 
 st.write(f"**Seasonal-Naive Forecast for next {forecast_weeks} weeks (first 10 rows):**")
 st.dataframe(disp_fcst.head(10))
 
-# ===========================
-# STEP 6: BUILD DEMAND REPORT
-# ===========================
+# ─────────────────────────────────────────
+# (9) STEP 6: BUILD DEMAND REPORT
+# ─────────────────────────────────────────
 st.header("5. Demand Report: Stock vs Overdue vs Forecast vs Actual vs Planned vs Net")
 
 # 6A) Pivot forecast
@@ -362,8 +376,8 @@ all_week_begins |= set(pivot_works_raw.columns) if not pivot_works_raw.empty els
 all_week_begins = sorted(all_week_begins)
 
 forecast_cols = []
-actual_cols   = []
-planned_cols  = []
+actual_cols = []
+planned_cols = []
 
 for wb in all_week_begins:
     wb_str = wb.strftime("%d-%m-%Y")
@@ -396,7 +410,7 @@ report_df[f"TotalForecastNext{forecast_weeks}W"] = report_df[forecast_cols].sum(
 report_df[f"TotalActualNext{forecast_weeks}W"]   = report_df[actual_cols].sum(axis=1)
 report_df[f"TotalPlannedNext{forecast_weeks}W"]  = report_df[planned_cols].sum(axis=1)
 
-# 6F) Overdue = max(HistoricSales − HistoricDespatched, 0)
+# 6F) Overdue = max(HistoricSales - HistoricDespatched, 0)
 total_despatched = (
     weekly_hist.groupby("ItemCode", as_index=False)
     .agg({"y": "sum"})
@@ -420,7 +434,7 @@ backlog_df = backlog_df[["ItemCode", "OverdueOrders"]]
 
 report_df = pd.merge(report_df, backlog_df, on="ItemCode", how="left").fillna({"OverdueOrders": 0})
 
-# 6G) NetDemand = (CurrentStock + TotalPlannedNextNW) − TotalActualNextNW
+# 6G) NetDemand = (CurrentStock + TotalPlannedNextNW) - TotalActualNextNW
 report_df[f"NetDemandNext{forecast_weeks}W"] = (
     report_df["CurrentStock"] + report_df[f"TotalPlannedNext{forecast_weeks}W"]
     - report_df[f"TotalActualNext{forecast_weeks}W"]
@@ -458,10 +472,9 @@ st.download_button(
     mime="text/csv"
 )
 
-
-# ===========================
-# STEP 7: INTERACTIVE CHARTS (PER SKU)
-# ===========================
+# ─────────────────────────────────────────
+# (10) STEP 7: INTERACTIVE CHARTS (PER SKU)
+# ─────────────────────────────────────────
 st.header("6. Visualize Weekly Demand for a Selected SKU")
 
 sku_list = report_df["ItemCode"].unique().tolist()
@@ -499,7 +512,7 @@ plan_s = (
 )
 plan_s = plan_s.rename(columns={"y": "Planned"})
 
-# 7E) Combine all for plotting
+# 7E) Combine all four for plotting
 all_dates_plot = pd.DataFrame({
     "week_begin": pd.concat(
         [hist_s["week_begin"], fcst_s["week_begin"], act_s["week_begin"], plan_s["week_begin"]],
