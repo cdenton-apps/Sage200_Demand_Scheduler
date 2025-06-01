@@ -1,0 +1,11 @@
+[theme]
+  # ==== Replace these with your exact Solidus brand colors ====
+  primaryColor = "#0f181b"           # Solidus navy blue (example)
+  backgroundColor = "#EEF0F4"        # pure white background
+  secondaryBackgroundColor = "#FFCD26" # very light gray for sidebars
+  textColor = "#003165"              # same navy for text
+  font = "sans serif"                # or "serif", depending on brand guideline
+
+[server]
+  headless = true
+  enableCORS = false
