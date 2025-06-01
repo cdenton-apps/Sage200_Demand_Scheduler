@@ -33,6 +33,8 @@ st.markdown(
        despatches) to forecast N weeks, using **week‐commencing** (Monday) dates.  
     5. Compute **Overdue Orders** = max(HistoricSales − HistoricDespatched, 0).  
     6. Build a **Demand Report** with columns:  
+       - ItemCode (SKU)  
+       - ItemDescription (SKU description)  
        - CurrentStock  
        - OverdueOrders  
        - TotalForecastNextNW  
@@ -40,6 +42,7 @@ st.markdown(
        - TotalPlannedNextNW  
        - NetDemand = (Forecast + Actual + Overdue − Planned)  
        - RecommendReorderQty = max(NetDemand − CurrentStock, 0)  
+       - Followed by interleaved weekly columns: Forecast/Actual/Planned for each week commencing.  
     7. Provide interactive charts showing weekly series (Historic Despatched, Forecast, Actual, Planned)  
        and a bar chart of CurrentStock vs. Forecast vs. Actual vs. Planned vs. Overdue vs. Net.  
     8. Allow CSV export of the full Demand Report.
@@ -303,13 +306,21 @@ if not weekly_works_future.empty:
     )
 
 # 6D) Build combined DataFrame step by step
-# Start with stock
-report_df = stock_df.rename(columns={"QuantityOnHand": "CurrentStock"}).copy()
+# Start with stock (including ItemDescription if present)
+if "ItemDescription" in stock_df.columns:
+    report_df = stock_df[["ItemCode", "ItemDescription", "QuantityOnHand"]].copy()
+    report_df = report_df.rename(columns={"QuantityOnHand": "CurrentStock"})
+else:
+    report_df = stock_df[["ItemCode", "QuantityOnHand"]].copy()
+    report_df = report_df.rename(columns={"QuantityOnHand": "CurrentStock"})
+    report_df["ItemDescription"] = ""  # blank if missing
 
-# Ensure every SKU in forecast is present in stock; if not, add with zero CurrentStock
+# Ensure every SKU in forecast is present in stock; if not, add with zero CurrentStock & blank description
 for sku in pivot_fcst_raw.index:
     if sku not in report_df["ItemCode"].values:
-        report_df = report_df.append({"ItemCode": sku, "CurrentStock": 0}, ignore_index=True)
+        report_df = report_df.append(
+            {"ItemCode": sku, "CurrentStock": 0, "ItemDescription": ""}, ignore_index=True
+        )
 
 report_df = report_df.set_index("ItemCode")
 
@@ -391,28 +402,18 @@ report_df["RecommendReorderQty"] = (
     report_df[f"NetDemandNext{forecast_weeks}W"] - report_df["CurrentStock"]
 ).apply(lambda x: int(x) if x > 0 else 0)
 
-# 6I) Final column order (ItemDescription only if present)
-if "ItemDescription" in report_df.columns:
-    cols_order = ["ItemCode", "ItemDescription"]
-else:
-    cols_order = ["ItemCode"]
-
-cols_order += [
-    "CurrentStock",
-    "OverdueOrders",
-    f"TotalForecastNext{forecast_weeks}W",
-    f"TotalActualNext{forecast_weeks}W",
-    f"TotalPlannedNext{forecast_weeks}W",
-    f"NetDemandNext{forecast_weeks}W",
-    "RecommendReorderQty"
-] + [
-    col for trio in zip(forecast_cols, actual_cols, planned_cols)
-    for col in trio
-]
+# 6I) Final column order—now explicitly including both ItemCode and ItemDescription:
+cols_order = ["ItemCode", "ItemDescription", "CurrentStock", "OverdueOrders",
+              f"TotalForecastNext{forecast_weeks}W",
+              f"TotalActualNext{forecast_weeks}W",
+              f"TotalPlannedNext{forecast_weeks}W",
+              f"NetDemandNext{forecast_weeks}W",
+              "RecommendReorderQty"
+] + [col for trio in zip(forecast_cols, actual_cols, planned_cols) for col in trio]
 
 report_df = report_df[cols_order]
 
-st.write("**Demand Report (Stock | Overdue | Forecast | Actual | Planned | Net)**")
+st.write("**Demand Report (SKU | Description | Stock | Overdue | Forecast | Actual | Planned | Net)**")
 st.dataframe(report_df, use_container_width=True)
 
 # 6J) CSV Download
