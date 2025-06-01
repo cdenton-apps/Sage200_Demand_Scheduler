@@ -30,19 +30,21 @@ st.markdown(
     This app will:
     1. Aggregate **despatches** by week (≤ today) for historic data → used to forecast.  
     2. Aggregate **sales orders** by week and split into:
-       - Historic (≤ today) — not used for forecasting, but shown for reference  
+       - Historic (≤ today) — used to calculate overdue/backlog  
        - **Actual Future** (> today) — used to compare against forecast  
     3. Aggregate **works orders** by week, take only future weeks (> today) as “Planned Manufacturing.”  
-    4. Use a **seasonal-naive** approach (average of the same ISO week in prior years on despatches) to forecast N weeks.  
-    5. Build a **Demand Report** with columns:  
+    4. Use a **seasonal‐naive** approach (average of the same ISO week in prior years on despatches) to forecast N weeks.  
+    5. Compute **Overdue Orders** = max(HistoricSales − HistoricDespatched, 0).  
+    6. Build a **Demand Report** with columns:  
        - CurrentStock  
+       - OverdueOrders  
        - TotalForecastNextNW  
        - TotalActualNextNW  
        - TotalPlannedNextNW  
-       - NetDemand = (Forecast + Actual – Planned)  
-       - RecommendReorderQty = max(NetDemand – CurrentStock, 0)
-    6. Provide interactive charts showing weekly series (Historic Despatches, Forecast, Actual, Planned) and a bar chart of stock vs. forecast vs. actual vs. planned vs. net.  
-    7. Allow CSV export of the full Demand Report.
+       - NetDemand = (Forecast + Actual + Overdue − Planned)  
+       - RecommendReorderQty = max(NetDemand − CurrentStock, 0)  
+    7. Provide interactive charts showing weekly series (Historic Despatched, Forecast, Actual, Planned) and a bar chart of CurrentStock vs. Forecast vs. Actual vs. Planned vs. Overdue vs. Net.  
+    8. Allow CSV export of the full Demand Report.
     """
 )
 
@@ -188,31 +190,30 @@ weekly_works_all = (
     .rename(columns={"EndDate": "ds", "QuantityPlanned": "y"})
 )
 
-# 4D) Split “historic” vs “future” (based on today)
+# 4D) Split by today
 today = pd.Timestamp(datetime.today().date())
 
 # Historic to forecast: from despatches only
 weekly_hist = weekly_despatch[weekly_despatch["ds"] <= today].copy()
 
-# Sales: actual future vs. sale history (≤ today) – we only use future part
+# Sales: split
 weekly_sales_hist = weekly_sales_all[weekly_sales_all["ds"] <= today].copy()
 weekly_sales_future = weekly_sales_all[weekly_sales_all["ds"] > today].copy()
 
-# Works: planned future manufacturing (> today) vs. any past (we ignore)
+# Works: planned future manufacturing (> today)
 weekly_works_future = weekly_works_all[weekly_works_all["ds"] > today].copy()
 
 # 4E) Display tables with friendly headers
 def format_weekly_df(df, value_col, rename_col):
     """
-    df: columns ["ItemCode","ds","y"] or ["ItemCode","ds","Quantity..."]
-    value_col: column name after rename ("y" or renamed field)
+    df: columns ["ItemCode","ds","y"]
+    value_col: original column name ("y")
     rename_col: friendly name for value (e.g. "Historical Despatched")
-    Returns DataFrame with columns:
+    Returns: DataFrame with columns:
       ["ItemCode","Week Number","Week Beginning","Week Ending", rename_col]
     """
     temp = df.copy()
     temp = temp.rename(columns={value_col: rename_col})
-    # Compute Week Ending (Sunday) and Week Beginning (Monday)
     temp["Week Ending"] = temp["ds"]
     temp["Week Beginning"] = temp["ds"] - pd.Timedelta(days=6)
     temp["Week Number"] = temp["ds"].dt.isocalendar().week
@@ -259,7 +260,6 @@ forecast_df = batch_seasonal_naive_forecast(weekly_hist, forecast_weeks)
 if forecast_df.empty:
     st.warning("⚠️ Could not generate any forecasts (need ≥ some historic data per ISO week).")
 else:
-    # Build display DataFrame
     disp_fcst = forecast_df.copy()
     disp_fcst["Week Beginning"] = disp_fcst["ds"] - pd.Timedelta(days=6)
     disp_fcst["Week Number"] = disp_fcst["ds"].dt.isocalendar().week
@@ -273,7 +273,7 @@ else:
 # ===========================
 # STEP 6: BUILD DEMAND REPORT
 # ===========================
-st.header("5. Demand Report: Stock vs Forecast vs Actual vs Planned")
+st.header("5. Demand Report: Stock vs Forecast vs Actual vs Planned vs Overdue")
 
 if not forecast_df.empty:
     # 6A) Pivot Forecast (future weeks only)
@@ -332,24 +332,48 @@ if not forecast_df.empty:
     report_df[f"TotalActualNext{forecast_weeks}W"]   = report_df[actual_cols].sum(axis=1) if actual_cols else 0
     report_df[f"TotalPlannedNext{forecast_weeks}W"]  = report_df[planned_cols].sum(axis=1) if planned_cols else 0
 
-    # 6F) NetDemand = Forecast + Actual – Planned
+    # 6F) Compute Overdue Orders = max(TotalSoldHistoric – TotalDespatched, 0)
+    total_despatched = (
+        weekly_hist.groupby("ItemCode", as_index=False)
+        .agg({"y": "sum"})
+        .rename(columns={"y": "TotalDespatched"})
+    )
+    total_sold_historic = (
+        weekly_sales_hist.groupby("ItemCode", as_index=False)
+        .agg({"y": "sum"})
+        .rename(columns={"y": "TotalSoldHistoric"})
+    )
+    backlog_df = pd.merge(
+        total_sold_historic,
+        total_despatched,
+        on="ItemCode",
+        how="outer"
+    ).fillna(0)
+    backlog_df["OverdueOrders"] = (backlog_df["TotalSoldHistoric"] - backlog_df["TotalDespatched"]).clip(lower=0)
+    backlog_df = backlog_df[["ItemCode", "OverdueOrders"]]
+
+    report_df = pd.merge(report_df, backlog_df, on="ItemCode", how="left").fillna({"OverdueOrders": 0})
+
+    # 6G) NetDemand = Forecast + Actual + Overdue – Planned
     report_df[f"NetDemandNext{forecast_weeks}W"] = (
         report_df[f"TotalForecastNext{forecast_weeks}W"]
         + report_df[f"TotalActualNext{forecast_weeks}W"]
+        + report_df["OverdueOrders"]
         - report_df[f"TotalPlannedNext{forecast_weeks}W"]
     )
 
-    # 6G) RecommendReorder = max(NetDemand – CurrentStock, 0)
+    # 6H) RecommendReorder = max(NetDemand – CurrentStock, 0)
     report_df["RecommendReorderQty"] = (
         report_df[f"NetDemandNext{forecast_weeks}W"] - report_df["CurrentStock"]
     ).apply(lambda x: int(x) if x > 0 else 0)
 
-    # 6H) Final column order
+    # 6I) Final column order
     cols_order = ["ItemCode"]
     if "ItemDescription" in report_df.columns:
         cols_order.append("ItemDescription")
     cols_order += [
         "CurrentStock",
+        "OverdueOrders",
         f"TotalForecastNext{forecast_weeks}W",
         f"TotalActualNext{forecast_weeks}W",
         f"TotalPlannedNext{forecast_weeks}W",
@@ -360,10 +384,10 @@ if not forecast_df.empty:
 
     report_df = report_df[cols_order]
 
-    st.write("**Demand Report (Stock | Forecast | Actual | Planned | Net)**")
+    st.write("**Demand Report (Stock | Overdue | Forecast | Actual | Planned | Net)**")
     st.dataframe(report_df, use_container_width=True)
 
-    # 6I) Allow CSV download
+    # 6J) CSV Download
     csv_buf = io.StringIO()
     report_df.to_csv(csv_buf, index=False)
     st.download_button(
@@ -398,10 +422,11 @@ if not forecast_df.empty:
         plan_s = weekly_works_future[weekly_works_future["ItemCode"] == chosen_sku][["ds", "y"]].copy().sort_values("ds")
         plan_s = plan_s.rename(columns={"y": "Planned"})
 
-        # 7E) Combine all four into a single DataFrame
+        # 7E) Combine all four into one DataFrame for plotting
         all_dates = pd.DataFrame({
             "ds": pd.concat([hist_s["ds"], fcst_s["ds"], act_s["ds"], plan_s["ds"]], ignore_index=True)
         }).drop_duplicates().sort_values("ds")
+
         plot_df = all_dates.merge(hist_s, on="ds", how="left")
         plot_df = plot_df.merge(fcst_s, on="ds", how="left")
         plot_df = plot_df.merge(act_s, on="ds", how="left")
@@ -417,14 +442,15 @@ if not forecast_df.empty:
         total_act    = float(act_s["ActualFuture"].sum()) if not act_s.empty else 0.0
         total_plan   = float(plan_s["Planned"].sum()) if not plan_s.empty else 0.0
         current_stk  = float(report_df.loc[report_df["ItemCode"] == chosen_sku, "CurrentStock"].iloc[0])
-        net_demand   = report_df.loc[report_df["ItemCode"] == chosen_sku, f"NetDemandNext{forecast_weeks}W"].iloc[0]
+        overdue_val  = float(report_df.loc[report_df["ItemCode"] == chosen_sku, "OverdueOrders"].iloc[0])
+        net_demand   = float(report_df.loc[report_df["ItemCode"] == chosen_sku, f"NetDemandNext{forecast_weeks}W"].iloc[0])
 
         bar_df = pd.DataFrame({
-            "Category": ["Current Stock", "Forecast", "ActualFuture", "Planned", "NetDemand"],
-            "Quantity": [current_stk, total_fcst, total_act, total_plan, net_demand]
+            "Category": ["Current Stock", "Forecast", "ActualFuture", "Planned", "OverdueOrders", "NetDemand"],
+            "Quantity": [current_stk, total_fcst, total_act, total_plan, overdue_val, net_demand]
         }).set_index("Category")
 
-        st.subheader(f"Stock vs Forecast vs Actual vs Planned vs Net for next {forecast_weeks} weeks")
+        st.subheader(f"Stock | Forecast | Actual | Planned | Overdue | Net for next {forecast_weeks} weeks")
         st.bar_chart(bar_df, height=300)
 
 else:
