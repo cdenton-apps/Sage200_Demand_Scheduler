@@ -6,9 +6,7 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime, timedelta
-from utils.forecasting import (
-    batch_seasonal_naive_forecast,
-)
+from utils.forecasting import batch_seasonal_naive_forecast
 
 st.set_page_config(
     page_title="Solidus Demand Forecast",
@@ -91,16 +89,16 @@ except Exception as e:
     st.error(f"❌ Could not read one or more CSV files: {e}")
     st.stop()
 
-# Validate required columns for each
-req_stock = {"ItemCode", "QuantityOnHand"}
+# Validate required columns
+req_stock    = {"ItemCode", "QuantityOnHand"}
 req_despatch = {"DispatchDate", "ItemCode", "QuantityDispatched"}
-req_sales = {"OrderDate", "ItemCode", "QuantityOrdered"}
-req_works = {"EndDate", "ItemCode", "QuantityPlanned"}
+req_sales    = {"OrderDate", "ItemCode", "QuantityOrdered"}
+req_works    = {"EndDate", "ItemCode", "QuantityPlanned"}
 
-missing_stock = req_stock - set(stock_df.columns)
+missing_stock    = req_stock    - set(stock_df.columns)
 missing_despatch = req_despatch - set(despatch_df.columns)
-missing_sales = req_sales - set(sales_df.columns)
-missing_works = req_works - set(works_df.columns)
+missing_sales    = req_sales    - set(sales_df.columns)
+missing_works    = req_works    - set(works_df.columns)
 
 if missing_stock:
     st.error(f"Stock CSV missing required column(s): {', '.join(missing_stock)}")
@@ -116,7 +114,6 @@ if missing_works:
     st.stop()
 
 st.success("✅ All CSVs loaded and validated.")
-
 
 # ===========================
 # STEP 3: PREVIEW RAW DATA
@@ -193,7 +190,7 @@ today = pd.Timestamp(datetime.today().date())
 weekly_hist = weekly_despatch[weekly_despatch["ds"] <= today].copy()
 
 # Sales: split
-weekly_sales_hist = weekly_sales_all[weekly_sales_all["ds"] <= today].copy()
+weekly_sales_hist   = weekly_sales_all[weekly_sales_all["ds"] <= today].copy()
 weekly_sales_future = weekly_sales_all[weekly_sales_all["ds"] > today].copy()
 
 # Works: planned future manufacturing (> today)
@@ -270,36 +267,38 @@ st.dataframe(disp_fcst.head(10))
 # ===========================
 st.header("5. Demand Report: Stock vs Overdue vs Forecast vs Actual vs Planned vs Net")
 
-# 6A) Pivot Forecast (future weeks only)
-future_weeks = sorted(forecast_df["ds"].unique())
+# 6A) Pivot Forecast (future weeks only), sort chronologically, rename
 pivot_fcst = (
-    forecast_df[["ItemCode", "ds", "yhat"]]
+    forecast_df
     .pivot(index="ItemCode", columns="ds", values="yhat")
     .fillna(0)
 )
-pivot_fcst.columns = [col.strftime("%d-%m-%Y") for col in pivot_fcst.columns]
+pivot_fcst = pivot_fcst.sort_index(axis=1)  # ensure columns sorted by actual datetime
+pivot_fcst.columns = [f"Forecast {col.strftime('%d-%m-%Y')}" for col in pivot_fcst.columns]
 pivot_fcst.reset_index(inplace=True)
 
-# 6B) Pivot Sales Future
+# 6B) Pivot Sales Future, sort, rename
 if not weekly_sales_future.empty:
     pivot_sales = (
-        weekly_sales_future[["ItemCode", "ds", "y"]]
+        weekly_sales_future
         .pivot(index="ItemCode", columns="ds", values="y")
         .fillna(0)
     )
-    pivot_sales.columns = [f"Actual_{col.strftime('%d-%m-%Y')}" for col in pivot_sales.columns]
+    pivot_sales = pivot_sales.sort_index(axis=1)
+    pivot_sales.columns = [f"Actual {col.strftime('%d-%m-%Y')}" for col in pivot_sales.columns]
     pivot_sales.reset_index(inplace=True)
 else:
     pivot_sales = pd.DataFrame({"ItemCode": pivot_fcst["ItemCode"].tolist()})
 
-# 6C) Pivot Works Future
+# 6C) Pivot Works Future, sort, rename
 if not weekly_works_future.empty:
     pivot_works = (
-        weekly_works_future[["ItemCode", "ds", "y"]]
+        weekly_works_future
         .pivot(index="ItemCode", columns="ds", values="y")
         .fillna(0)
     )
-    pivot_works.columns = [f"Planned_{col.strftime('%d-%m-%Y')}" for col in pivot_works.columns]
+    pivot_works = pivot_works.sort_index(axis=1)
+    pivot_works.columns = [f"Planned {col.strftime('%d-%m-%Y')}" for col in pivot_works.columns]
     pivot_works.reset_index(inplace=True)
 else:
     pivot_works = pd.DataFrame({"ItemCode": pivot_fcst["ItemCode"].tolist()})
@@ -318,9 +317,9 @@ report_df = pd.merge(report_df, pivot_works, on="ItemCode", how="left").fillna(0
 # 6E) Compute Totals
 all_cols = set(report_df.columns)
 junk = {"ItemCode", "ItemDescription", "CurrentStock"}
-forecast_cols = [c for c in all_cols if c not in junk and not c.startswith("Actual_") and not c.startswith("Planned_")]
-actual_cols = [c for c in all_cols if c.startswith("Actual_")]
-planned_cols = [c for c in all_cols if c.startswith("Planned_")]
+forecast_cols = [c for c in all_cols if c.startswith("Forecast ")]
+actual_cols   = [c for c in all_cols if c.startswith("Actual ")]
+planned_cols  = [c for c in all_cols if c.startswith("Planned ")]
 
 report_df[f"TotalForecastNext{forecast_weeks}W"] = report_df[forecast_cols].sum(axis=1)
 report_df[f"TotalActualNext{forecast_weeks}W"]   = report_df[actual_cols].sum(axis=1) if actual_cols else 0
@@ -362,10 +361,9 @@ report_df["RecommendReorderQty"] = (
 ).apply(lambda x: int(x) if x > 0 else 0)
 
 # 6I) Final column order (ItemDescription only if present)
+cols_order = ["ItemCode"]
 if "ItemDescription" in report_df.columns:
-    cols_order = ["ItemCode", "ItemDescription"]
-else:
-    cols_order = ["ItemCode"]
+    cols_order.append("ItemDescription")
 
 cols_order += [
     "CurrentStock",
@@ -440,7 +438,7 @@ overdue_val  = float(report_df.loc[report_df["ItemCode"] == chosen_sku, "Overdue
 net_demand   = float(report_df.loc[report_df["ItemCode"] == chosen_sku, f"NetDemandNext{forecast_weeks}W"].iloc[0])
 
 bar_df = pd.DataFrame({
-    "Category": ["Current Stock", "Forecast", "ActualFuture", "Planned", "OverdueOrders", "NetDemand"],
+    "Category": ["Current Stock", "Forecast", "Actual", "Planned", "Overdue", "NetDemand"],
     "Quantity": [current_stk, total_fcst, total_act, total_plan, overdue_val, net_demand]
 }).set_index("Category")
 
