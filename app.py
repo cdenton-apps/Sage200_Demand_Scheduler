@@ -41,8 +41,8 @@ st.markdown(
        - TotalForecastNextNW  
        - TotalActualNextNW  
        - TotalPlannedNextNW  
-       - NetDemand = TotalActualNextNW − (CurrentStock + TotalPlannedNextNW)  
-       - RecommendReorderQty = round up NetDemand to next multiple of 10 (if NetDemand > 0)  
+       - NetDemand = (CurrentStock + TotalPlannedNextNW) − TotalActualNextNW  
+       - RecommendReorderQty = round up(NetDemand) to next multiple of 10 (if NetDemand > 0)  
        - Followed by interleaved weekly columns: Forecast/Actual/Planned for each week commencing.  
     7. Provide interactive charts showing weekly series (Historic Despatched, Forecast, Actual, Planned)  
        and a bar chart of CurrentStock vs. Forecast vs. Actual vs. Planned vs. Overdue vs. Net.  
@@ -392,13 +392,13 @@ backlog_df = backlog_df[["ItemCode", "OverdueOrders"]]
 
 report_df = pd.merge(report_df, backlog_df, on="ItemCode", how="left").fillna({"OverdueOrders": 0})
 
-# 6G) NetDemand = TotalActualNextNW − (CurrentStock + TotalPlannedNextNW)   # <<< changed
+# 6G) NetDemand = (CurrentStock + TotalPlannedNextNW) − TotalActualNextNW      # <<< changed
 report_df[f"NetDemandNext{forecast_weeks}W"] = (
-    report_df[f"TotalActualNext{forecast_weeks}W"]
-    - (report_df["CurrentStock"] + report_df[f"TotalPlannedNext{forecast_weeks}W"])
+    report_df["CurrentStock"] + report_df[f"TotalPlannedNext{forecast_weeks}W"]
+    - report_df[f"TotalActualNext{forecast_weeks}W"]
 )
 
-# 6H) RecommendReorderQty = round up NetDemand to nearest 10                 # <<< changed
+# 6H) RecommendReorderQty = round up NetDemand to nearest 10                   # <<< changed
 def round_up_to_10(x):
     return math.ceil(x / 10) * 10 if x > 0 else 0
 
