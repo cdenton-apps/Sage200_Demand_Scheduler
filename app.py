@@ -33,54 +33,56 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
-# (3) DISPLAY SOLIDUS LOGO (if available)
+# (3) DISPLAY SOLIDUS LOGO AND TITLE SIDE-BY-SIDE
 # ─────────────────────────────────────────
-# Place a valid PNG at assets/solidus_logo.png in your repo
+# Make sure you have a valid PNG at assets/solidus_logo.png
 logo_path = "assets/solidus_logo.png"
-try:
-    img = Image.open(logo_path)
-    st.image(img, width=250)
-except Exception:
-    st.warning(f"⚠️ Could not load logo at '{logo_path}'. Please ensure the file exists and is a valid PNG.")
 
-# ─────────────────────────────────────────
-# (4) MAIN TITLE
-# ─────────────────────────────────────────
-st.title("Solidus Demand Forecast")
+col_logo, col_text = st.columns([1, 3], gap="medium")
+with col_logo:
+    try:
+        img = Image.open(logo_path)
+        st.image(img, use_column_width=True)
+    except Exception:
+        st.warning(f"⚠️ Could not load logo at '{logo_path}'. Please check that the file exists and is a valid PNG.")
 
-st.markdown(
-    """
-    Upload **four** CSV exports from Sage 200:
-    1. **Current Stock** (ItemCode, ItemDescription*, QuantityOnHand)  
-    2. **Past Order Despatches** (DispatchDate, ItemCode, QuantityDispatched)  
-    3. **Sales Orders** (OrderDate, ItemCode, QuantityOrdered)  
-    4. **Open Works Orders** (EndDate, ItemCode, QuantityPlanned)  
+with col_text:
+    st.markdown("<br>", unsafe_allow_html=True)  # small vertical spacer
+    st.markdown("<h1 style='color:#0D4B6A; margin-bottom:0.25em;'>Solidus Demand Forecast</h1>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        Upload **four** CSV exports from Sage 200:
+        1. **Current Stock** (ItemCode, ItemDescription*, QuantityOnHand)  
+        2. **Past Order Despatches** (DispatchDate, ItemCode, QuantityDispatched)  
+        3. **Sales Orders** (OrderDate, ItemCode, QuantityOrdered)  
+        4. **Open Works Orders** (EndDate, ItemCode, QuantityPlanned)  
 
-    This app will:
-    1. Aggregate **despatches** by week (≤ today) for historic data → used to forecast.  
-    2. Aggregate **sales orders** by week and split into:
-       - Historic (≤ today) — used to calculate overdue/backlog  
-       - **Actual Future** (> today) — used to compare against forecast  
-    3. Aggregate **works orders** by week, take only future weeks (> today) as “Planned Manufacturing.”  
-    4. Use a **seasonal‐naive** approach (average of the same ISO week in prior years on  
-       despatches) to forecast N weeks, using **week‐commencing** (Monday) dates.  
-    5. Compute **Overdue Orders** = max(HistoricSales − HistoricDespatched, 0).  
-    6. Build a **Demand Report** with columns:  
-       - ItemCode (SKU)  
-       - ItemDescription (SKU description)  
-       - CurrentStock  
-       - OverdueOrders  
-       - TotalForecastNextNW  
-       - TotalActualNextNW  
-       - TotalPlannedNextNW  
-       - NetDemand = (CurrentStock + TotalPlannedNextNW) − TotalActualNextNW  
-       - RecommendReorderQty = round up(NetDemand) to next multiple of 10 (if NetDemand > 0)  
-       - Followed by interleaved weekly columns: Forecast/Actual/Planned for each week commencing.  
-    7. Provide interactive charts showing weekly series (Historic Despatched, Forecast, Actual, Planned)  
-       and a bar chart of CurrentStock vs. Forecast vs. Actual vs. Planned vs. Overdue vs. Net.  
-    8. Allow CSV export of the full Demand Report.
-    """
-)
+        This app will:
+        1. Aggregate **despatches** by week (≤ today) for historic data → used to forecast.  
+        2. Aggregate **sales orders** by week and split into:
+           - Historic (≤ today) — used to calculate overdue/backlog  
+           - **Actual Future** (> today) — used to compare against forecast  
+        3. Aggregate **works orders** by week, take only future weeks (> today) as “Planned Manufacturing.”  
+        4. Use a **seasonal‐naive** approach (average of the same ISO week in prior years on  
+           despatches) to forecast N weeks, using **week‐commencing** (Monday) dates.  
+        5. Compute **Overdue Orders** = max(HistoricSales − HistoricDespatched, 0).  
+        6. Build a **Demand Report** with columns:  
+           - ItemCode (SKU)  
+           - ItemDescription (SKU description)  
+           - CurrentStock  
+           - OverdueOrders  
+           - TotalForecastNextNW  
+           - TotalActualNextNW  
+           - TotalPlannedNextNW  
+           - NetDemand = (CurrentStock + TotalPlannedNextNW) − TotalActualNextNW  
+           - RecommendReorderQty = round up(NetDemand) to next multiple of 10 (if NetDemand > 0)  
+           - Followed by interleaved weekly columns: Forecast/Actual/Planned for each week commencing.  
+        7. Provide interactive charts showing weekly series (Historic Despatched, Forecast, Actual, Planned)  
+           and a bar chart of CurrentStock vs. Forecast vs. Actual vs. Planned vs. Overdue vs. Net.  
+        8. Allow CSV export of the full Demand Report.
+        """,
+        unsafe_allow_html=True
+    )
 
 # ===========================
 # STEP 1: UPLOAD CSVs
@@ -95,7 +97,7 @@ with col1:
         help="Columns: ItemCode, ItemDescription (optional), QuantityOnHand"
     )
     despatch_file = st.file_uploader(
-        label="Upload Past Despatches CSV",
+        label="Upload Past Order Despatches CSV",
         type=["csv"],
         help="Columns: DispatchDate (YYYY-MM-DD), ItemCode, QuantityDispatched"
     )
@@ -161,7 +163,7 @@ st.header("2. Preview Raw Data")
 with st.expander("Preview Stock Data (first 10 rows)"):
     st.dataframe(stock_df.head(10))
 
-with st.expander("Preview Past Despatches Data (first 10 rows)"):
+with st.expander("Preview Past Order Despatches Data (first 10 rows)"):
     st.dataframe(despatch_df.head(10))
 
 with st.expander("Preview Sales Orders Data (first 10 rows)"):
