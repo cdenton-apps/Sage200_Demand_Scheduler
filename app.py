@@ -40,8 +40,8 @@ st.markdown(
        - TotalForecastNextNW  
        - TotalActualNextNW  
        - TotalPlannedNextNW  
-       - NetDemand = – ((CurrentStock + TotalPlannedNextNW − TotalActualNextNW))  
-       - RecommendReorderQty = round up NetDemand to next multiple of 10  
+       - NetDemand = – ((CurrentStock + TotalPlannedNextNW) − TotalActualNextNW)  ← “sum (current + planned − actual) × –1”  
+       - RecommendReorderQty = round up NetDemand to the next multiple of 10  
        - Followed by interleaved weekly columns: Forecast/Actual/Planned for each week commencing.  
     7. Provide interactive charts showing weekly series (Historic Despatched, Forecast, Actual, Planned)  
        and a bar chart of CurrentStock vs. Forecast vs. Actual vs. Planned vs. Overdue vs. Net.  
@@ -222,7 +222,7 @@ def format_weekly_df(df, value_col, rename_col):
     temp = df.copy()
     temp = temp.rename(columns={value_col: rename_col})
     # Week Ending = week_begin + 6 days (Sunday)
-    temp["Week Ending"] = temp["week_begin"] + pd.Timedelta(days=6)
+    temp["Week Ending"]    = temp["week_begin"] + pd.Timedelta(days=6)
     temp["Week Number"]    = temp["week_begin"].dt.isocalendar().week
     temp["Week Commencing"] = temp["week_begin"].dt.strftime("%d-%m-%Y")
     temp["Week Ending"]    = temp["Week Ending"].dt.strftime("%d-%m-%Y")
@@ -389,14 +389,14 @@ backlog_df = backlog_df[["ItemCode", "OverdueOrders"]]
 
 report_df = pd.merge(report_df, backlog_df, on="ItemCode", how="left").fillna({"OverdueOrders": 0})
 
-# 6G) NetDemand = – ((CurrentStock + TotalPlannedNextNW) − TotalActualNextNW)
+# 6G) NetDemand = – ((CurrentStock + TotalPlannedNextNW) − TotalActualNextNW)   # <<< changed
 report_df[f"NetDemandNext{forecast_weeks}W"] = -(
     report_df["CurrentStock"]
     + report_df[f"TotalPlannedNext{forecast_weeks}W"]
     - report_df[f"TotalActualNext{forecast_weeks}W"]
 )
 
-# 6H) RecommendReorder = round up NetDemand to nearest 10
+# 6H) RecommendReorderQty = round up NetDemand to nearest 10                    # <<< changed
 def round_up_to_10(x):
     return int(((x + 9) // 10) * 10) if x > 0 else 0
 
