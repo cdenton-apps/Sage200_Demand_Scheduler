@@ -40,8 +40,8 @@ st.markdown(
        - TotalForecastNextNW  
        - TotalActualNextNW  
        - TotalPlannedNextNW  
-       - NetDemand = (Forecast + Actual + Overdue − Planned)  
-       - RecommendReorderQty = max(NetDemand − CurrentStock, 0)  
+       - NetDemand = (CurrentStock − TotalActualNextNW) + TotalPlannedNextNW  
+       - RecommendReorderQty = max(NetDemand, 0)  
        - Followed by interleaved weekly columns: Forecast/Actual/Planned for each week commencing.  
     7. Provide interactive charts showing weekly series (Historic Despatched, Forecast, Actual, Planned)  
        and a bar chart of CurrentStock vs. Forecast vs. Actual vs. Planned vs. Overdue vs. Net.  
@@ -223,9 +223,9 @@ def format_weekly_df(df, value_col, rename_col):
     temp = temp.rename(columns={value_col: rename_col})
     # Week Ending = week_begin + 6 days (Sunday)
     temp["Week Ending"] = temp["week_begin"] + pd.Timedelta(days=6)
-    temp["Week Number"] = temp["week_begin"].dt.isocalendar().week
+    temp["Week Number"]    = temp["week_begin"].dt.isocalendar().week
     temp["Week Commencing"] = temp["week_begin"].dt.strftime("%d-%m-%Y")
-    temp["Week Ending"] = temp["Week Ending"].dt.strftime("%d-%m-%Y")
+    temp["Week Ending"]    = temp["Week Ending"].dt.strftime("%d-%m-%Y")
     return temp[["ItemCode", "Week Number", "Week Commencing", "Week Ending", rename_col]]
 
 st.subheader("Historic Weekly Despatches (for Forecast)")
@@ -270,7 +270,7 @@ forecast_df["week_begin"] = forecast_df["ds"] - pd.Timedelta(days=6)
 
 disp_fcst = forecast_df.copy()
 disp_fcst["Week Commencing"] = disp_fcst["week_begin"].dt.strftime("%d-%m-%Y")
-disp_fcst["Week Number"] = disp_fcst["week_begin"].dt.isocalendar().week
+disp_fcst["Week Number"]     = disp_fcst["week_begin"].dt.isocalendar().week
 disp_fcst = disp_fcst.rename(columns={"yhat": "Forecasted Demand"})
 disp_fcst = disp_fcst[["ItemCode", "Week Number", "Week Commencing", "Forecasted Demand"]]
 
@@ -389,26 +389,25 @@ backlog_df = backlog_df[["ItemCode", "OverdueOrders"]]
 
 report_df = pd.merge(report_df, backlog_df, on="ItemCode", how="left").fillna({"OverdueOrders": 0})
 
-# 6G) NetDemand = Forecast + Actual + Overdue − Planned
+# 6G) NetDemand = (CurrentStock − TotalActualNextNW) + TotalPlannedNextNW
 report_df[f"NetDemandNext{forecast_weeks}W"] = (
-    report_df[f"TotalForecastNext{forecast_weeks}W"]
-    + report_df[f"TotalActualNext{forecast_weeks}W"]
-    + report_df["OverdueOrders"]
-    - report_df[f"TotalPlannedNext{forecast_weeks}W"]
+    report_df["CurrentStock"]
+    - report_df[f"TotalActualNext{forecast_weeks}W"]
+    + report_df[f"TotalPlannedNext{forecast_weeks}W"]
 )
 
-# 6H) RecommendReorder = max(NetDemand − CurrentStock, 0)
-report_df["RecommendReorderQty"] = (
-    report_df[f"NetDemandNext{forecast_weeks}W"] - report_df["CurrentStock"]
-).apply(lambda x: int(x) if x > 0 else 0)
+# 6H) RecommendReorder = max(NetDemand, 0)
+report_df["RecommendReorderQty"] = report_df[f"NetDemandNext{forecast_weeks}W"].apply(lambda x: int(x) if x > 0 else 0)
 
 # 6I) Final column order—now explicitly including both ItemCode and ItemDescription:
-cols_order = ["ItemCode", "ItemDescription", "CurrentStock", "OverdueOrders",
-              f"TotalForecastNext{forecast_weeks}W",
-              f"TotalActualNext{forecast_weeks}W",
-              f"TotalPlannedNext{forecast_weeks}W",
-              f"NetDemandNext{forecast_weeks}W",
-              "RecommendReorderQty"
+cols_order = [
+    "ItemCode", "ItemDescription",
+    "CurrentStock", "OverdueOrders",
+    f"TotalForecastNext{forecast_weeks}W",
+    f"TotalActualNext{forecast_weeks}W",
+    f"TotalPlannedNext{forecast_weeks}W",
+    f"NetDemandNext{forecast_weeks}W",
+    "RecommendReorderQty"
 ] + [col for trio in zip(forecast_cols, actual_cols, planned_cols) for col in trio]
 
 report_df = report_df[cols_order]
