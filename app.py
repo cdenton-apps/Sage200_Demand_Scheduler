@@ -434,7 +434,7 @@ backlog_df = backlog_df[["ItemCode", "OverdueOrders"]]
 
 report_df = pd.merge(report_df, backlog_df, on="ItemCode", how="left").fillna({"OverdueOrders": 0})
 
-# 6G) NetDemand = TotalActualNextNW - CurrentStock - TotalPlannedNextNW
+# 6G) NetDemand = (TotalActualNextNW - CurrentStock - TotalPlannedNextNW)
 report_df[f"NetDemandNext{forecast_weeks}W"] = (
     report_df["CurrentStock"] + report_df[f"TotalPlannedNext{forecast_weeks}W"]
     - report_df[f"TotalActualNext{forecast_weeks}W"]
